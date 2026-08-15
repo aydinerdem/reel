@@ -20,7 +20,8 @@ self.addEventListener("fetch", (event) => {
     c.postMessage({ type: "SW_DEBUG", pathname: url.pathname, matched: !!match })
   ));
   if (!match) return; // not ours, let the browser handle it normally
-  event.respondWith(handleStream(match[1], event.request));
+  const totalSize = url.searchParams.get("size");
+  event.respondWith(handleStream(match[1], event.request, totalSize ? Number(totalSize) : null));
 });
 
 async function ensureToken() {
@@ -33,7 +34,7 @@ async function ensureToken() {
   return self.token;
 }
 
-async function handleStream(fileId, request) {
+async function handleStream(fileId, request, totalSize) {
   const token = await ensureToken();
   if (!token) {
     return new Response("Oturum bulunamadı. Sayfayı yenileyip tekrar giriş yapın.", { status: 401 });
@@ -60,9 +61,27 @@ async function handleStream(fileId, request) {
   }
 
   const outHeaders = new Headers();
-  for (const h of ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"]) {
-    const v = driveRes.headers.get(h);
-    if (v) outHeaders.set(h, v);
+  const contentType = driveRes.headers.get("Content-Type");
+  const contentLength = driveRes.headers.get("Content-Length");
+  if (contentType) outHeaders.set("Content-Type", contentType);
+  outHeaders.set("Accept-Ranges", "bytes");
+
+  // fetch() CORS kısıtlaması yüzünden Google'ın Content-Range header'ını
+  // OKUYAMIYORUZ (safelist dışı). Bu yüzden aralığı biz, isteğin Range
+  // header'ından ve dosyanın bildiğimiz toplam boyutundan hesaplayıp
+  // kendimiz üretiyoruz — tarayıcı 206 cevabını Content-Range olmadan
+  // geçersiz sayıp oynatmayı reddediyordu.
+  let status = driveRes.status;
+  if (range && totalSize && contentLength) {
+    const m = range.match(/bytes=(\d+)-(\d*)/);
+    const start = m ? Number(m[1]) : 0;
+    const end = start + Number(contentLength) - 1;
+    outHeaders.set("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+    outHeaders.set("Content-Length", String(contentLength));
+    status = 206;
+  } else if (contentLength) {
+    outHeaders.set("Content-Length", contentLength);
   }
-  return new Response(driveRes.body, { status: driveRes.status, headers: outHeaders });
+
+  return new Response(driveRes.body, { status, headers: outHeaders });
 }
