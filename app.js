@@ -175,32 +175,45 @@
 
   const MIME_PREFIX = { video: "video/", photo: "image/", music: "audio/" };
 
-  // Bir sekme için: klasör ayarlanmışsa o klasör ağacını gezer, ayarlanmamışsa
-  // tüm Drive'da o mimeType'ı arar. Her dosyaya doğrudan bulunduğu klasörün
-  // adını "folderName" olarak etiketler (chip filtresi için).
-  async function listTab(tab) {
+  // Bir sekme için: klasör ayarlanmışsa o klasör ağacını SEVİYE SEVİYE, HER
+  // SEVİYEDEKİ KLASÖRLERİ PARALEL olarak gezer (tek tek sırayla değil — bu,
+  // çok sayıda alt klasör olduğunda taramayı büyük ölçüde hızlandırır).
+  // Ayarlanmamışsa tüm Drive'da o mimeType'ı arar. Her dosyaya doğrudan
+  // bulunduğu klasörün adını "folderName" olarak etiketler.
+  async function listTab(tab, onProgress) {
     const prefix = MIME_PREFIX[tab];
     const rootId = getFolderId(tab);
     const files = [];
 
     if (rootId) {
       const rootName = (await getFolderName(rootId)) || "Kök Klasör";
-      const queue = [{ id: rootId, name: rootName }];
-      while (queue.length) {
-        const { id: folderId, name: folderName } = queue.shift();
-        let pageToken = null;
-        do {
-          const data = await driveList(`'${folderId}' in parents and trashed=false`, pageToken);
-          for (const f of data.files) {
-            if (f.mimeType === "application/vnd.google-apps.folder") {
-              queue.push({ id: f.id, name: f.name });
-            } else if (f.mimeType && f.mimeType.startsWith(prefix)) {
-              f.folderName = folderName;
-              files.push(f);
-            }
-          }
-          pageToken = data.nextPageToken;
-        } while (pageToken);
+      let currentLevel = [{ id: rootId, name: rootName }];
+      let scanned = 0;
+      while (currentLevel.length) {
+        const results = await Promise.all(
+          currentLevel.map(async ({ id: folderId, name: folderName }) => {
+            const found = [], subfolders = [];
+            let pageToken = null;
+            do {
+              const data = await driveList(`'${folderId}' in parents and trashed=false`, pageToken);
+              for (const f of data.files) {
+                if (f.mimeType === "application/vnd.google-apps.folder") {
+                  subfolders.push({ id: f.id, name: f.name });
+                } else if (f.mimeType && f.mimeType.startsWith(prefix)) {
+                  f.folderName = folderName;
+                  found.push(f);
+                }
+              }
+              pageToken = data.nextPageToken;
+            } while (pageToken);
+            return { found, subfolders };
+          })
+        );
+        scanned += currentLevel.length;
+        onProgress?.(scanned);
+        const nextLevel = [];
+        for (const r of results) { files.push(...r.found); nextLevel.push(...r.subfolders); }
+        currentLevel = nextLevel;
       }
     } else {
       let pageToken = null;
@@ -219,11 +232,21 @@
   async function loadLibrary(silent) {
     if (!silent) {
       loadingState.classList.remove("hidden");
+      loadingState.textContent = "Kütüphane taranıyor…";
       emptyState.classList.add("hidden");
       grid.innerHTML = "";
     }
+    let scannedTotal = 0;
+    const bump = () => {
+      scannedTotal++;
+      if (!silent) loadingState.textContent = `Kütüphane taranıyor… (${scannedTotal} klasör kontrol edildi)`;
+    };
     try {
-      const [video, photo, music] = await Promise.all([listTab("video"), listTab("photo"), listTab("music")]);
+      const [video, photo, music] = await Promise.all([
+        listTab("video", bump),
+        listTab("photo", bump),
+        listTab("music", bump),
+      ]);
       library = { video, photo, music };
       for (const k in library) library[k].sort((a, b) => a.name.localeCompare(b.name, "tr"));
       saveCache(library);
