@@ -146,7 +146,16 @@ input{font-family:inherit;}
 .folder-badge{
   display:inline-block; margin-top:5px; font-size:10.5px; color:var(--teal);
   font-family:var(--font-mono); background:rgba(79,182,168,0.12);
-  padding:2px 7px; border-radius:5px;
+  padding:2px 7px; border-radius:5px; border:none; cursor:pointer;
+}
+.folder-badge:hover{background:rgba(79,182,168,0.22); color:#79d6c8;}
+.folder-badge:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+.thumb-wrap{position:relative; width:100%; aspect-ratio:16/10; overflow:hidden;}
+.thumb-wrap .card-thumb{position:absolute; inset:0; width:100%; height:100%;}
+.thumb-preview{
+  position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  background:#000;
 }
 
 /* ---------- Folder settings modal ---------- */
