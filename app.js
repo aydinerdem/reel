@@ -173,7 +173,6 @@
     if (rootId) {
       const rootName = (await getFolderName(rootId)) || "Kök Klasör";
       let currentLevel = [{ id: rootId, name: rootName }];
-      let scanned = 0;
       while (currentLevel.length) {
         const results = await Promise.all(
           currentLevel.map(async ({ id: folderId, name: folderName }) => {
@@ -191,11 +190,10 @@
               }
               pageToken = data.nextPageToken;
             } while (pageToken);
+            onProgress?.(); // her klasör bitiminde anında bildir, seviyenin tamamını bekleme
             return { found, subfolders };
           })
         );
-        scanned += currentLevel.length;
-        onProgress?.(scanned);
         const nextLevel = [];
         for (const r of results) { files.push(...r.found); nextLevel.push(...r.subfolders); }
         currentLevel = nextLevel;
