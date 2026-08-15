@@ -301,12 +301,16 @@
         div.textContent = "♪";
         card.appendChild(div);
       } else if (f.thumbnailLink) {
+        const wrap = document.createElement("div");
+        wrap.className = "thumb-wrap";
         const img = document.createElement("img");
         img.className = "card-thumb";
         img.loading = "lazy";
         img.src = f.thumbnailLink;
         img.alt = "";
-        card.appendChild(img);
+        wrap.appendChild(img);
+        if (activeTab === "video") attachHoverPreview(wrap, f.id);
+        card.appendChild(wrap);
       } else {
         const div = document.createElement("div");
         div.className = "card-thumb";
@@ -323,17 +327,68 @@
       sub.textContent = fmtDuration(f.videoMediaMetadata?.durationMillis);
       body.appendChild(title);
       body.appendChild(sub);
-      if (f.folderName && activeFolder === "Tümü") {
-        const badge = document.createElement("span");
-        badge.className = "folder-badge";
-        badge.textContent = f.folderName;
-        body.appendChild(badge);
+      if (f.folderName) {
+        const crumb = document.createElement("button");
+        crumb.className = "folder-badge";
+        crumb.textContent = "📁 " + f.folderName;
+        crumb.type = "button";
+        crumb.addEventListener("click", (e) => {
+          e.stopPropagation();
+          activeFolder = f.folderName;
+          renderTab();
+        });
+        body.appendChild(crumb);
       }
       card.appendChild(body);
 
-      card.addEventListener("click", () => openPlayer(f));
+      card.addEventListener("click", () => {
+        if (card.dataset.suppressClick === "1") { card.dataset.suppressClick = "0"; return; }
+        openPlayer(f);
+      });
       grid.appendChild(card);
     }
+  }
+
+  // Kartın üzerine gelince (masaüstü) ya da basılı tutunca (dokunmatik) kısa
+  // bir önizleme oynatır. En fazla PREVIEW_MAX_MS kadar oynar, sonra durur.
+  const PREVIEW_MAX_MS = 8000;
+  const PREVIEW_HOLD_MS = 350;
+  function attachHoverPreview(wrap, fileId) {
+    const card = wrap.closest(".card");
+    let previewEl = null, stopTimer = null, holdTimer = null, longPress = false;
+
+    function start() {
+      if (previewEl) return;
+      previewEl = document.createElement("video");
+      previewEl.className = "thumb-preview";
+      previewEl.src = streamUrl(fileId);
+      previewEl.muted = true;
+      previewEl.playsInline = true;
+      previewEl.autoplay = true;
+      wrap.appendChild(previewEl);
+      previewEl.play().catch(() => {});
+      stopTimer = setTimeout(stop, PREVIEW_MAX_MS);
+    }
+    function stop() {
+      clearTimeout(stopTimer);
+      if (previewEl) { previewEl.pause(); previewEl.remove(); previewEl = null; }
+    }
+
+    wrap.addEventListener("mouseenter", start);
+    wrap.addEventListener("mouseleave", stop);
+
+    wrap.addEventListener("touchstart", () => {
+      longPress = false;
+      holdTimer = setTimeout(() => { longPress = true; start(); }, PREVIEW_HOLD_MS);
+    }, { passive: true });
+    wrap.addEventListener("touchend", () => {
+      clearTimeout(holdTimer);
+      if (longPress) { stop(); card.dataset.suppressClick = "1"; }
+    });
+    wrap.addEventListener("touchcancel", () => {
+      clearTimeout(holdTimer);
+      stop();
+    });
   }
 
   // ---------- Player ----------
