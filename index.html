@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reel — Kişisel Medya Kütüphanesi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Giriş ekranı -->
+  <div id="gate" class="gate">
+    <div class="gate-inner">
+      <div class="sprocket-row" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <h1 class="brand">Reel</h1>
+      <p class="tagline">Google Drive'daki video, fotoğraf ve müziklerin — kendi salonunda.</p>
+      <button id="signin-btn" class="btn-primary">Google ile giriş yap</button>
+      <p id="gate-status" class="gate-status"></p>
+    </div>
+  </div>
+
+  <!-- Uygulama -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand-mark">Reel</div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="video">Video</button>
+        <button class="tab" data-tab="photo">Fotoğraf</button>
+        <button class="tab" data-tab="music">Müzik</button>
+      </nav>
+      <div class="sidebar-foot">
+        <input id="search" type="search" placeholder="Kütüphanede ara…" />
+        <button id="refresh-btn" class="btn-ghost">Yenile</button>
+        <button id="signout-btn" class="btn-ghost">Çıkış</button>
+      </div>
+    </aside>
+
+    <div class="sprocket-col" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <main class="content">
+      <header class="content-header">
+        <h2 id="section-title">Video</h2>
+        <span id="section-count" class="count"></span>
+      </header>
+      <div id="chips" class="chips"></div>
+      <div id="grid" class="grid"></div>
+      <p id="empty-state" class="empty hidden">Burada henüz bir şey yok. "Yenile" ile Drive'ını yeniden tara.</p>
+      <p id="loading-state" class="loading hidden">Kütüphane taranıyor…</p>
+    </main>
+  </div>
+
+  <!-- Oynatıcı modal -->
+  <div id="player-modal" class="player-modal hidden">
+    <button id="player-close" class="player-close" aria-label="Kapat">✕</button>
+    <div id="player-stage" class="player-stage"></div>
+    <div class="player-meta">
+      <h3 id="player-title"></h3>
+      <p id="player-sub"></p>
+    </div>
+  </div>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
