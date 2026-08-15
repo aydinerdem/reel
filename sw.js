@@ -40,11 +40,20 @@ async function handleStream(fileId, request) {
   const range = request.headers.get("Range");
   if (range) headers["Range"] = range;
 
-  const driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers });
+  let driveRes;
+  try {
+    driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers });
+  } catch (err) {
+    return new Response("Drive'a bağlanılamadı: " + err.message, { status: 502 });
+  }
 
   if (driveRes.status === 401) {
     self.token = null;
     return new Response("Oturum süresi doldu. Sayfayı yenileyin.", { status: 401 });
+  }
+  if (!driveRes.ok && driveRes.status !== 206) {
+    const bodyText = await driveRes.text().catch(() => "");
+    return new Response("Drive hatası " + driveRes.status + ": " + bodyText.slice(0, 300), { status: driveRes.status });
   }
 
   const outHeaders = new Headers();
