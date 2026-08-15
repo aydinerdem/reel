@@ -323,21 +323,23 @@
         div.className = "card-thumb audio";
         div.textContent = "♪";
         card.appendChild(div);
-      } else if (f.thumbnailLink) {
+      } else {
         const wrap = document.createElement("div");
         wrap.className = "thumb-wrap";
-        const img = document.createElement("img");
-        img.className = "card-thumb";
-        img.loading = "lazy";
-        img.src = f.thumbnailLink;
-        img.alt = "";
-        wrap.appendChild(img);
+        if (f.thumbnailLink) {
+          const img = document.createElement("img");
+          img.className = "card-thumb";
+          img.loading = "lazy";
+          img.src = f.thumbnailLink;
+          img.alt = "";
+          wrap.appendChild(img);
+        } else {
+          const placeholder = document.createElement("div");
+          placeholder.className = "card-thumb";
+          wrap.appendChild(placeholder);
+        }
         if (activeTab === "video") attachHoverPreview(wrap, f.id);
         card.appendChild(wrap);
-      } else {
-        const div = document.createElement("div");
-        div.className = "card-thumb";
-        card.appendChild(div);
       }
 
       const body = document.createElement("div");
@@ -433,12 +435,20 @@
       el.playsInline = true;
       el.setAttribute("x-webkit-airplay", "allow");
       el.src = streamUrl(f.id);
+      el.addEventListener("error", () => {
+        const err = el.error;
+        playerSub.textContent = "Oynatma hatası (kod " + (err?.code ?? "?") + "). Network sekmesinde 'stream/" + f.id + "' isteğine bak.";
+      });
     } else if (f.mimeType.startsWith("audio/")) {
       el = document.createElement("audio");
       el.controls = true;
       el.autoplay = true;
       el.setAttribute("x-webkit-airplay", "allow");
       el.src = streamUrl(f.id);
+      el.addEventListener("error", () => {
+        const err = el.error;
+        playerSub.textContent = "Oynatma hatası (kod " + (err?.code ?? "?") + "). Network sekmesinde 'stream/" + f.id + "' isteğine bak.";
+      });
     } else {
       el = document.createElement("img");
       el.src = streamUrl(f.id);
