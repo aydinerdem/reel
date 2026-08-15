@@ -366,7 +366,7 @@
           placeholder.className = "card-thumb";
           wrap.appendChild(placeholder);
         }
-        if (activeTab === "video") attachHoverPreview(wrap, f.id);
+        if (activeTab === "video") attachHoverPreview(wrap, f);
         card.appendChild(wrap);
       }
 
@@ -406,7 +406,7 @@
   // bir önizleme oynatır. En fazla PREVIEW_MAX_MS kadar oynar, sonra durur.
   const PREVIEW_MAX_MS = 8000;
   const PREVIEW_HOLD_MS = 350;
-  function attachHoverPreview(wrap, fileId) {
+  function attachHoverPreview(wrap, f) {
     const card = wrap.closest(".card");
     let previewEl = null, stopTimer = null, holdTimer = null, longPress = false;
 
@@ -414,7 +414,7 @@
       if (previewEl) return;
       previewEl = document.createElement("video");
       previewEl.className = "thumb-preview";
-      previewEl.src = streamUrl(fileId);
+      previewEl.src = streamUrl(f);
       previewEl.muted = true;
       previewEl.playsInline = true;
       previewEl.autoplay = true;
@@ -445,8 +445,8 @@
   }
 
   // ---------- Player ----------
-  function streamUrl(fileId) {
-    return `stream/${fileId}`;
+  function streamUrl(f) {
+    return `stream/${f.id}${f.size ? `?size=${f.size}` : ""}`;
   }
 
   function openPlayer(f) {
@@ -462,7 +462,7 @@
       el.autoplay = true;
       el.playsInline = true;
       el.setAttribute("x-webkit-airplay", "allow");
-      el.src = streamUrl(f.id);
+      el.src = streamUrl(f);
       el.addEventListener("error", () => {
         const err = el.error;
         playerSub.textContent = "Oynatma hatası (kod " + (err?.code ?? "?") + "). Network sekmesinde 'stream/" + f.id + "' isteğine bak.";
@@ -472,14 +472,14 @@
       el.controls = true;
       el.autoplay = true;
       el.setAttribute("x-webkit-airplay", "allow");
-      el.src = streamUrl(f.id);
+      el.src = streamUrl(f);
       el.addEventListener("error", () => {
         const err = el.error;
         playerSub.textContent = "Oynatma hatası (kod " + (err?.code ?? "?") + "). Network sekmesinde 'stream/" + f.id + "' isteğine bak.";
       });
     } else {
       el = document.createElement("img");
-      el.src = streamUrl(f.id);
+      el.src = streamUrl(f);
       el.alt = f.name;
     }
     playerStage.appendChild(el);
