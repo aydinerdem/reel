@@ -265,6 +265,33 @@
     }
   }
 
+  // ---------- Küçük resimler (thumbnail) ----------
+  // thumbnailLink çerez tabanlı Google oturumuna güveniyor, üçüncü taraf
+  // çerezleri engelli tarayıcılarda çalışmıyor. Bunun yerine OAuth token'ıyla
+  // kimlik doğrulanmış şekilde çekip blob URL olarak gösteriyoruz. Sadece
+  // ekranda görünen kartlar için (IntersectionObserver ile tembel yükleme).
+  const thumbObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const img = entry.target;
+      thumbObserver.unobserve(img);
+      loadThumbnail(img);
+    }
+  }, { rootMargin: "200px" });
+
+  async function loadThumbnail(img) {
+    const link = img.dataset.thumbLink;
+    if (!link || !accessToken) return;
+    try {
+      const res = await fetch(link, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      img.src = URL.createObjectURL(blob);
+    } catch {
+      /* sessizce geç, kart yer tutucu görünümde kalır */
+    }
+  }
+
   // ---------- Rendering ----------
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -329,10 +356,10 @@
         if (f.thumbnailLink) {
           const img = document.createElement("img");
           img.className = "card-thumb";
-          img.loading = "lazy";
-          img.src = f.thumbnailLink;
+          img.dataset.thumbLink = f.thumbnailLink;
           img.alt = "";
           wrap.appendChild(img);
+          thumbObserver.observe(img);
         } else {
           const placeholder = document.createElement("div");
           placeholder.className = "card-thumb";
