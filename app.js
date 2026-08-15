@@ -30,6 +30,7 @@
     });
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e.data?.type === "SW_NEEDS_TOKEN") pushTokenToSW();
+      if (e.data?.type === "SW_DEBUG") console.log("[reel-sw]", e.data.pathname, "matched:", e.data.matched);
     });
   }
   function pushTokenToSW() {
