@@ -38,6 +38,40 @@
     }
   }
 
+  // ---------- Klasör ayarları (sekme başına) ----------
+  const FOLDER_KEYS = { video: "reel_folder_video", photo: "reel_folder_photo", music: "reel_folder_music" };
+  function getFolderId(tab) {
+    return localStorage.getItem(FOLDER_KEYS[tab]) || "";
+  }
+  function setFolderId(tab, id) {
+    if (id) localStorage.setItem(FOLDER_KEYS[tab], id);
+    else localStorage.removeItem(FOLDER_KEYS[tab]);
+  }
+  function extractFolderId(input) {
+    if (!input) return "";
+    input = input.trim();
+    const m = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (m) return m[1];
+    if (/^[a-zA-Z0-9_-]{10,}$/.test(input)) return input;
+    return "";
+  }
+
+  const foldersModal = $("#folders-modal");
+  $("#folders-btn").addEventListener("click", () => {
+    $("#folder-video").value = getFolderId("video");
+    $("#folder-photo").value = getFolderId("photo");
+    $("#folder-music").value = getFolderId("music");
+    foldersModal.classList.remove("hidden");
+  });
+  $("#folders-cancel").addEventListener("click", () => foldersModal.classList.add("hidden"));
+  $("#folders-save").addEventListener("click", () => {
+    setFolderId("video", extractFolderId($("#folder-video").value));
+    setFolderId("photo", extractFolderId($("#folder-photo").value));
+    setFolderId("music", extractFolderId($("#folder-music").value));
+    foldersModal.classList.add("hidden");
+    loadLibrary(true);
+  });
+
   // ---------- Auth ----------
   function haveValidToken() {
     return accessToken && Date.now() < tokenExpiry;
@@ -88,14 +122,6 @@
   }
 
   // ---------- Drive ----------
-  function isMedia(mime) {
-    return mime && (mime.startsWith("video/") || mime.startsWith("image/") || mime.startsWith("audio/"));
-  }
-  function bucketOf(mime) {
-    if (mime.startsWith("video/")) return "video";
-    if (mime.startsWith("image/")) return "photo";
-    return "music";
-  }
 
   async function driveList(q, pageToken) {
     const params = new URLSearchParams({
@@ -103,6 +129,8 @@
       pageSize: "200",
       fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,videoMediaMetadata,imageMediaMetadata,size,modifiedTime)",
       pageToken: pageToken || "",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
     });
     const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -114,20 +142,26 @@
 
   async function getFolderName(folderId) {
     const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${folderId}?fields=name`,
+      `https://www.googleapis.com/drive/v3/files/${folderId}?fields=name&supportsAllDrives=true`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (!res.ok) return null;
     return (await res.json()).name;
   }
 
-  // Her dosyaya, doğrudan içinde bulunduğu klasörün adını "folderName" olarak
-  // etiketler. Bu isim, ilgili sekmede klasör filtresi (chip) olarak kullanılır.
-  async function listAllFiles() {
+  const MIME_PREFIX = { video: "video/", photo: "image/", music: "audio/" };
+
+  // Bir sekme için: klasör ayarlanmışsa o klasör ağacını gezer, ayarlanmamışsa
+  // tüm Drive'da o mimeType'ı arar. Her dosyaya doğrudan bulunduğu klasörün
+  // adını "folderName" olarak etiketler (chip filtresi için).
+  async function listTab(tab) {
+    const prefix = MIME_PREFIX[tab];
+    const rootId = getFolderId(tab);
     const files = [];
-    if (CFG.ROOT_FOLDER_ID) {
-      const rootName = (await getFolderName(CFG.ROOT_FOLDER_ID)) || "Kök Klasör";
-      const queue = [{ id: CFG.ROOT_FOLDER_ID, name: rootName }];
+
+    if (rootId) {
+      const rootName = (await getFolderName(rootId)) || "Kök Klasör";
+      const queue = [{ id: rootId, name: rootName }];
       while (queue.length) {
         const { id: folderId, name: folderName } = queue.shift();
         let pageToken = null;
@@ -136,7 +170,7 @@
           for (const f of data.files) {
             if (f.mimeType === "application/vnd.google-apps.folder") {
               queue.push({ id: f.id, name: f.name });
-            } else if (isMedia(f.mimeType)) {
+            } else if (f.mimeType && f.mimeType.startsWith(prefix)) {
               f.folderName = folderName;
               files.push(f);
             }
@@ -147,10 +181,7 @@
     } else {
       let pageToken = null;
       do {
-        const data = await driveList(
-          "(mimeType contains 'video/' or mimeType contains 'image/' or mimeType contains 'audio/') and trashed=false",
-          pageToken
-        );
+        const data = await driveList(`mimeType contains '${prefix}' and trashed=false`, pageToken);
         for (const f of data.files) {
           f.folderName = "Drive";
           files.push(f);
@@ -166,9 +197,8 @@
     emptyState.classList.add("hidden");
     grid.innerHTML = "";
     try {
-      const files = await listAllFiles();
-      library = { video: [], photo: [], music: [] };
-      for (const f of files) library[bucketOf(f.mimeType)].push(f);
+      const [video, photo, music] = await Promise.all([listTab("video"), listTab("photo"), listTab("music")]);
+      library = { video, photo, music };
       for (const k in library) library[k].sort((a, b) => a.name.localeCompare(b.name, "tr"));
       renderTab();
     } catch (err) {

@@ -35,6 +35,7 @@
       </nav>
       <div class="sidebar-foot">
         <input id="search" type="search" placeholder="Kütüphanede ara…" />
+        <button id="folders-btn" class="btn-ghost">Klasörler</button>
         <button id="refresh-btn" class="btn-ghost">Yenile</button>
         <button id="signout-btn" class="btn-ghost">Çıkış</button>
       </div>
@@ -63,6 +64,30 @@
     <div class="player-meta">
       <h3 id="player-title"></h3>
       <p id="player-sub"></p>
+    </div>
+  </div>
+
+  <!-- Klasör ayarları modal -->
+  <div id="folders-modal" class="folders-modal hidden">
+    <div class="folders-box">
+      <h3>Klasörler</h3>
+      <p class="folders-hint">
+        Her sekme için Drive'daki ilgili klasörün linkini yapıştır. Boş bırakırsan
+        o sekme tüm Drive'ında arama yapar.
+      </p>
+      <label>Video klasörü
+        <input id="folder-video" type="text" placeholder="https://drive.google.com/drive/folders/…" />
+      </label>
+      <label>Fotoğraf klasörü
+        <input id="folder-photo" type="text" placeholder="https://drive.google.com/drive/folders/…" />
+      </label>
+      <label>Müzik klasörü
+        <input id="folder-music" type="text" placeholder="https://drive.google.com/drive/folders/…" />
+      </label>
+      <div class="folders-actions">
+        <button id="folders-cancel" class="btn-ghost">Vazgeç</button>
+        <button id="folders-save" class="btn-primary">Kaydet ve tara</button>
+      </div>
     </div>
   </div>
 
