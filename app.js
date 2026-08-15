@@ -357,10 +357,10 @@
         if (f.thumbnailLink) {
           const img = document.createElement("img");
           img.className = "card-thumb";
-          img.dataset.thumbLink = f.thumbnailLink;
+          img.loading = "lazy";
+          img.src = f.thumbnailLink;
           img.alt = "";
           wrap.appendChild(img);
-          thumbObserver.observe(img);
         } else {
           const placeholder = document.createElement("div");
           placeholder.className = "card-thumb";
