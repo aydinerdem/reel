@@ -16,6 +16,9 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   const match = url.pathname.match(/\/stream\/([^/]+)$/);
+  self.clients.matchAll().then((cs) => cs.forEach((c) =>
+    c.postMessage({ type: "SW_DEBUG", pathname: url.pathname, matched: !!match })
+  ));
   if (!match) return; // not ours, let the browser handle it normally
   event.respondWith(handleStream(match[1], event.request));
 });
