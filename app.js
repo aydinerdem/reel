@@ -141,12 +141,39 @@
       supportsAllDrives: "true",
       includeItemsFromAllDrives: "true",
     });
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    let res;
+    try {
+      res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (err.name === "AbortError") throw new Error("Zaman aşımı (20sn) — Drive yanıt vermedi");
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
     if (res.status === 401) throw new Error("AUTH_EXPIRED");
     if (!res.ok) throw new Error("Drive isteği başarısız: " + res.status);
     return res.json();
+  }
+
+  // Aynı anda en fazla `limit` kadar iş çalıştırır, gerisini sıraya alır.
+  // Yüzlerce klasörü tek seferde ateşlemek yerine bant genişliğini/kotayı
+  // korumak ve donmaları önlemek için kullanılıyor.
+  async function mapWithConcurrency(items, limit, fn) {
+    const results = new Array(items.length);
+    let next = 0;
+    async function worker() {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await fn(items[i]);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
   }
 
   async function getFolderName(folderId) {
@@ -174,26 +201,24 @@
       const rootName = (await getFolderName(rootId)) || "Kök Klasör";
       let currentLevel = [{ id: rootId, name: rootName }];
       while (currentLevel.length) {
-        const results = await Promise.all(
-          currentLevel.map(async ({ id: folderId, name: folderName }) => {
-            const found = [], subfolders = [];
-            let pageToken = null;
-            do {
-              const data = await driveList(`'${folderId}' in parents and trashed=false`, pageToken);
-              for (const f of data.files) {
-                if (f.mimeType === "application/vnd.google-apps.folder") {
-                  subfolders.push({ id: f.id, name: f.name });
-                } else if (f.mimeType && f.mimeType.startsWith(prefix)) {
-                  f.folderName = folderName;
-                  found.push(f);
-                }
+        const results = await mapWithConcurrency(currentLevel, 8, async ({ id: folderId, name: folderName }) => {
+          const found = [], subfolders = [];
+          let pageToken = null;
+          do {
+            const data = await driveList(`'${folderId}' in parents and trashed=false`, pageToken);
+            for (const f of data.files) {
+              if (f.mimeType === "application/vnd.google-apps.folder") {
+                subfolders.push({ id: f.id, name: f.name });
+              } else if (f.mimeType && f.mimeType.startsWith(prefix)) {
+                f.folderName = folderName;
+                found.push(f);
               }
-              pageToken = data.nextPageToken;
-            } while (pageToken);
-            onProgress?.(); // her klasör bitiminde anında bildir, seviyenin tamamını bekleme
-            return { found, subfolders };
-          })
-        );
+            }
+            pageToken = data.nextPageToken;
+          } while (pageToken);
+          onProgress?.(); // her klasör bitiminde anında bildir
+          return { found, subfolders };
+        });
         const nextLevel = [];
         for (const r of results) { files.push(...r.found); nextLevel.push(...r.subfolders); }
         currentLevel = nextLevel;
