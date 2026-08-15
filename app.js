@@ -87,7 +87,11 @@
     } catch { return null; }
   }
   function saveCache(lib) {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ library: lib, ts: Date.now() })); } catch {}
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ library: lib, ts: Date.now() }));
+    } catch (err) {
+      console.warn("[reel] Kütüphane önbelleğe yazılamadı (muhtemelen çok büyük):", err.message);
+    }
   }
 
   // ---------- Auth ----------
