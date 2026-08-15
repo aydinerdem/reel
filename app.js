@@ -22,23 +22,6 @@
 
   const TAB_LABELS = { video: "Video", photo: "Fotoğraf", music: "Müzik" };
 
-  // ---------- Service worker (proxies Drive streams with Range + auth) ----------
-  let swReady = null;
-  if ("serviceWorker" in navigator) {
-    swReady = navigator.serviceWorker.register("sw.js").then((reg) => {
-      return navigator.serviceWorker.ready.then(() => reg);
-    });
-    navigator.serviceWorker.addEventListener("message", (e) => {
-      if (e.data?.type === "SW_NEEDS_TOKEN") pushTokenToSW();
-      if (e.data?.type === "SW_DEBUG") console.log("[reel-sw]", e.data.pathname, "matched:", e.data.matched);
-    });
-  }
-  function pushTokenToSW() {
-    if (navigator.serviceWorker?.controller && accessToken) {
-      navigator.serviceWorker.controller.postMessage({ type: "TOKEN", token: accessToken });
-    }
-  }
-
   // ---------- Klasör ayarları (sekme başına) ----------
   const FOLDER_KEYS = { video: "reel_folder_video", photo: "reel_folder_photo", music: "reel_folder_music" };
   function getFolderId(tab) {
@@ -112,7 +95,6 @@
         tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000;
         sessionStorage.setItem(TOKEN_KEY, accessToken);
         sessionStorage.setItem(TOKEN_EXP_KEY, String(tokenExpiry));
-        pushTokenToSW();
         enterApp();
       },
     });
@@ -138,8 +120,6 @@
   async function enterApp() {
     gate.classList.add("hidden");
     app.classList.remove("hidden");
-    if (swReady) await swReady;
-    pushTokenToSW();
     const cached = loadCache();
     if (cached) {
       library = cached;
@@ -270,33 +250,6 @@
     }
   }
 
-  // ---------- Küçük resimler (thumbnail) ----------
-  // thumbnailLink çerez tabanlı Google oturumuna güveniyor, üçüncü taraf
-  // çerezleri engelli tarayıcılarda çalışmıyor. Bunun yerine OAuth token'ıyla
-  // kimlik doğrulanmış şekilde çekip blob URL olarak gösteriyoruz. Sadece
-  // ekranda görünen kartlar için (IntersectionObserver ile tembel yükleme).
-  const thumbObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      const img = entry.target;
-      thumbObserver.unobserve(img);
-      loadThumbnail(img);
-    }
-  }, { rootMargin: "200px" });
-
-  async function loadThumbnail(img) {
-    const link = img.dataset.thumbLink;
-    if (!link || !accessToken) return;
-    try {
-      const res = await fetch(link, { headers: { Authorization: `Bearer ${accessToken}` } });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      img.src = URL.createObjectURL(blob);
-    } catch {
-      /* sessizce geç, kart yer tutucu görünümde kalır */
-    }
-  }
-
   // ---------- Rendering ----------
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -410,25 +363,36 @@
   // bir önizleme oynatır. En fazla PREVIEW_MAX_MS kadar oynar, sonra durur.
   const PREVIEW_MAX_MS = 8000;
   const PREVIEW_HOLD_MS = 350;
+  const PREVIEW_BYTES = 6 * 1024 * 1024; // ilk ~6MB, çoğu mp4'te önizlemeye yeter
   function attachHoverPreview(wrap, f) {
     const card = wrap.closest(".card");
-    let previewEl = null, stopTimer = null, holdTimer = null, longPress = false;
+    let previewEl = null, stopTimer = null, holdTimer = null, longPress = false, cancelled = false;
 
-    function start() {
-      if (previewEl) return;
-      previewEl = document.createElement("video");
-      previewEl.className = "thumb-preview";
-      previewEl.src = streamUrl(f);
-      previewEl.muted = true;
-      previewEl.playsInline = true;
-      previewEl.autoplay = true;
-      wrap.appendChild(previewEl);
-      previewEl.play().catch(() => {});
-      stopTimer = setTimeout(stop, PREVIEW_MAX_MS);
+    async function start() {
+      if (previewEl || cancelled) return;
+      cancelled = false;
+      try {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Range: `bytes=0-${PREVIEW_BYTES}` },
+        });
+        if (cancelled || !res.ok) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        previewEl = document.createElement("video");
+        previewEl.className = "thumb-preview";
+        previewEl.src = URL.createObjectURL(blob);
+        previewEl.muted = true;
+        previewEl.playsInline = true;
+        previewEl.autoplay = true;
+        wrap.appendChild(previewEl);
+        previewEl.play().catch(() => {});
+        stopTimer = setTimeout(stop, PREVIEW_MAX_MS);
+      } catch { /* sessiz geç, önizleme opsiyonel */ }
     }
     function stop() {
+      cancelled = true;
       clearTimeout(stopTimer);
-      if (previewEl) { previewEl.pause(); previewEl.remove(); previewEl = null; }
+      if (previewEl) { previewEl.pause(); URL.revokeObjectURL(previewEl.src); previewEl.remove(); previewEl = null; }
     }
 
     wrap.addEventListener("mouseenter", start);
@@ -449,16 +413,46 @@
   }
 
   // ---------- Player ----------
-  function streamUrl(f) {
-    return `stream/${f.id}${f.size ? `?size=${f.size}` : ""}`;
+  // Drive dosyasını OAuth token'ıyla doğrudan indirip (blob) oynatır.
+  // Service Worker'a bağımlı değil — daha az hata noktası, daha güvenilir.
+  async function fetchAsBlobUrl(fileId, onProgress) {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error("Drive isteği başarısız: " + res.status);
+    const total = Number(res.headers.get("Content-Length")) || 0;
+    if (!res.body || !total) {
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    }
+    const reader = res.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      onProgress?.(Math.round((loaded / total) * 100));
+    }
+    return URL.createObjectURL(new Blob(chunks));
   }
 
-  function openPlayer(f) {
-    pushTokenToSW();
+  async function openPlayer(f) {
     playerStage.innerHTML = "";
     playerTitle.textContent = f.name;
-    playerSub.textContent = [f.mimeType, fmtDuration(f.videoMediaMetadata?.durationMillis)].filter(Boolean).join(" · ");
+    playerSub.textContent = "Yükleniyor… 0%";
+    playerModal.classList.remove("hidden");
 
+    let blobUrl;
+    try {
+      blobUrl = await fetchAsBlobUrl(f.id, (pct) => { playerSub.textContent = `Yükleniyor… ${pct}%`; });
+    } catch (err) {
+      playerSub.textContent = "Yükleme hatası: " + err.message;
+      return;
+    }
+
+    playerSub.textContent = [f.mimeType, fmtDuration(f.videoMediaMetadata?.durationMillis)].filter(Boolean).join(" · ");
     let el;
     if (f.mimeType.startsWith("video/")) {
       el = document.createElement("video");
@@ -466,28 +460,20 @@
       el.autoplay = true;
       el.playsInline = true;
       el.setAttribute("x-webkit-airplay", "allow");
-      el.src = streamUrl(f);
-      el.addEventListener("error", () => {
-        const err = el.error;
-        playerSub.textContent = "Oynatma hatası (kod " + (err?.code ?? "?") + "). Network sekmesinde 'stream/" + f.id + "' isteğine bak.";
-      });
+      el.src = blobUrl;
     } else if (f.mimeType.startsWith("audio/")) {
       el = document.createElement("audio");
       el.controls = true;
       el.autoplay = true;
       el.setAttribute("x-webkit-airplay", "allow");
-      el.src = streamUrl(f);
-      el.addEventListener("error", () => {
-        const err = el.error;
-        playerSub.textContent = "Oynatma hatası (kod " + (err?.code ?? "?") + "). Network sekmesinde 'stream/" + f.id + "' isteğine bak.";
-      });
+      el.src = blobUrl;
     } else {
       el = document.createElement("img");
-      el.src = streamUrl(f);
+      el.src = blobUrl;
       el.alt = f.name;
     }
+    playerStage.innerHTML = "";
     playerStage.appendChild(el);
-    playerModal.classList.remove("hidden");
   }
 
   function closePlayer() {
