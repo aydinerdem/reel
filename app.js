@@ -69,8 +69,25 @@
     setFolderId("photo", extractFolderId($("#folder-photo").value));
     setFolderId("music", extractFolderId($("#folder-music").value));
     foldersModal.classList.add("hidden");
-    loadLibrary(true);
+    loadLibrary(false);
   });
+
+  // ---------- Kütüphane önbelleği ----------
+  // Bir kez tarandıktan sonra sonuç localStorage'a yazılır. Sonraki açılışlarda
+  // önce bu önbellek anında gösterilir, arka planda sessizce yeniden taranır ve
+  // bittiğinde ekran güncellenir — böylece açılış hızlı olur ama içerik güncel
+  // kalır. Yeni eklediğin bir dosyayı hemen görmek istersen "Yenile" ile
+  // önbelleği atlayıp anında tazeleyebilirsin.
+  const CACHE_KEY = "reel_library_cache";
+  function loadCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw).library : null;
+    } catch { return null; }
+  }
+  function saveCache(lib) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ library: lib, ts: Date.now() })); } catch {}
+  }
 
   // ---------- Auth ----------
   function haveValidToken() {
@@ -111,14 +128,21 @@
     gateStatus.textContent = "Çıkış yapıldı.";
   });
 
-  $("#refresh-btn").addEventListener("click", () => loadLibrary(true));
+  $("#refresh-btn").addEventListener("click", () => loadLibrary(false));
 
   async function enterApp() {
     gate.classList.add("hidden");
     app.classList.remove("hidden");
     if (swReady) await swReady;
     pushTokenToSW();
-    loadLibrary(false);
+    const cached = loadCache();
+    if (cached) {
+      library = cached;
+      renderTab();
+      loadLibrary(true); // arka planda sessizce tazele
+    } else {
+      loadLibrary(false);
+    }
   }
 
   // ---------- Drive ----------
@@ -192,14 +216,17 @@
     return files;
   }
 
-  async function loadLibrary(forceRefresh) {
-    loadingState.classList.remove("hidden");
-    emptyState.classList.add("hidden");
-    grid.innerHTML = "";
+  async function loadLibrary(silent) {
+    if (!silent) {
+      loadingState.classList.remove("hidden");
+      emptyState.classList.add("hidden");
+      grid.innerHTML = "";
+    }
     try {
       const [video, photo, music] = await Promise.all([listTab("video"), listTab("photo"), listTab("music")]);
       library = { video, photo, music };
       for (const k in library) library[k].sort((a, b) => a.name.localeCompare(b.name, "tr"));
+      saveCache(library);
       renderTab();
     } catch (err) {
       if (err.message === "AUTH_EXPIRED") {
@@ -207,9 +234,11 @@
         tokenClient.requestAccessToken({ prompt: "" });
         return;
       }
-      loadingState.classList.add("hidden");
-      emptyState.textContent = "Bir hata oluştu: " + err.message;
-      emptyState.classList.remove("hidden");
+      if (!silent) {
+        loadingState.classList.add("hidden");
+        emptyState.textContent = "Bir hata oluştu: " + err.message;
+        emptyState.classList.remove("hidden");
+      }
     }
   }
 
